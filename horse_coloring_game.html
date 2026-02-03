@@ -7,13 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            touch-action: none; /* 禁用瀏覽器預設的觸控行為，如滾動 */
+            touch-action: none; 
             user-select: none;
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
-            background-color: #f0f0f0;
         }
-        /* 畫布容器，背景是馬的線稿 */
         #canvas-container {
             width: 680px;
             height: 680px;
@@ -25,14 +23,12 @@
             border: 2px solid #ccc;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
-        /* 畫布本身，絕對定位疊在容器之上 */
         #drawing-canvas {
             position: absolute;
             top: 0;
             left: 0;
             cursor: crosshair;
         }
-        /* 工具列按鈕的樣式 */
         .tool-btn {
             transition: all 0.2s ease;
             border: 2px solid transparent;
@@ -59,138 +55,123 @@
         const CANVAS_HEIGHT = 680;
 
         const App = () => {
+            const [gameState, setGameState] = useState('start'); // 'start' or 'playing'
             const canvasRef = useRef(null);
             const audioRef = useRef(null);
-            const isDrawingRef = useRef(false);
+            const lastPointRef = useRef(null); // 儲存上一個點的位置
             
-            const [color, setColor] = useState('#ff0000'); // 預設紅色
-            const [brushSize, setBrushSize] = useState(10); // 預設大小
+            const [color, setColor] = useState('#ff0000');
+            const [brushSize, setBrushSize] = useState(10);
 
-            // 初始化畫布
             useEffect(() => {
+                if (gameState !== 'playing') return;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
-            }, []);
-
-            // 當顏色或筆刷大小改變時更新畫布設定
-            useEffect(() => {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
                 ctx.strokeStyle = color;
                 ctx.lineWidth = brushSize;
-            }, [color, brushSize]);
+            }, [gameState, color, brushSize]);
 
-            // 取得相對於畫布的座標
+            // --- 1. 全新的開始遊戲函式 ---
+            const handleStartGame = () => {
+                setGameState('playing');
+                // 關鍵一步：透過使用者點擊來「解鎖」音訊
+                if (audioRef.current) {
+                    audioRef.current.play().then(() => {
+                        audioRef.current.pause(); // 播放後立刻暫停，只是為了取得權限
+                    }).catch(e => console.error("音訊播放失敗:", e));
+                }
+            };
+
             const getCoords = (e) => {
                 const canvas = canvasRef.current;
                 const rect = canvas.getBoundingClientRect();
-                if (e.touches) { // 觸控事件
-                    return {
-                        x: e.touches[0].clientX - rect.left,
-                        y: e.touches[0].clientY - rect.top,
-                    };
-                }
-                // 滑鼠事件
-                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                const event = e.touches ? e.touches[0] : e;
+                return { x: event.clientX - rect.left, y: event.clientY - rect.top };
             };
 
-            const startDrawing = (e) => {
+            // --- 2. 全新的懸停繪畫邏輯 ---
+            const drawOnMove = (e) => {
                 const ctx = canvasRef.current.getContext('2d');
-                const { x, y } = getCoords(e);
-                ctx.beginPath();
-                ctx.moveTo(x, y);
-                isDrawingRef.current = true;
-                
-                // 嘗試在開始繪畫時就播放一次，以解鎖音訊
-                if(audioRef.current && audioRef.current.paused) {
-                    audioRef.current.play().catch(err => {
-                        console.log("音訊需要使用者互動才能播放。");
-                    });
+                const currentPoint = getCoords(e);
+
+                if (lastPointRef.current) {
+                    ctx.beginPath();
+                    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+                    ctx.lineTo(currentPoint.x, currentPoint.y);
+                    ctx.stroke();
+                    
+                    if (audioRef.current) {
+                        audioRef.current.currentTime = 0;
+                        audioRef.current.play().catch(err => {});
+                    }
                 }
+                lastPointRef.current = currentPoint;
             };
 
-            const draw = (e) => {
-                if (!isDrawingRef.current) return;
-                const ctx = canvasRef.current.getContext('2d');
-                const { x, y } = getCoords(e);
-                ctx.lineTo(x, y);
-                ctx.stroke();
-                
-                // 播放聲音
-                if(audioRef.current) {
-                    audioRef.current.currentTime = 0;
-                    audioRef.current.play().catch(err => {});
-                }
-            };
-
-            const stopDrawing = () => {
-                isDrawingRef.current = false;
-            };
-
-            const clearCanvas = () => {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const handleMouseLeave = () => {
+                lastPointRef.current = null; // 滑鼠離開畫布，清空上一個點
             };
             
-            const colors = ['#ff0000', '#0000ff', '#00ff00', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffffff'];
-            const sizes = [5, 10, 20, 30, 50];
+            const clearCanvas = () => {
+                const ctx = canvasRef.current.getContext('2d');
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            };
+
+            // --- 3. 根據遊戲狀態顯示不同畫面 ---
+            if (gameState === 'start') {
+                return (
+                    <div className="text-center">
+                        <h1 className="text-5xl font-bold text-white mb-8">小馬著色遊戲</h1>
+                        <button 
+                            onClick={handleStartGame}
+                            className="px-12 py-6 bg-green-500 text-white font-bold text-3xl rounded-lg hover:bg-green-400 transition-transform transform hover:scale-105"
+                        >
+                            開始遊戲
+                        </button>
+                        <audio ref={audioRef} src="./draw_sound.mp3" className="hidden" />
+                    </div>
+                );
+            }
 
             return (
                 <div className="flex flex-col items-center gap-4">
-                    <h1 className="text-3xl font-bold text-white">自由畫小馬</h1>
-                    
-                    {/* --- 工具列 --- */}
+                    {/* 工具列 */}
                     <div className="bg-gray-700 p-3 rounded-lg flex flex-wrap items-center justify-center gap-4 shadow-lg">
+                        {/* ... 顏色和粗細選擇 ... */}
                         <div className="flex items-center gap-3">
                             <span className="text-white font-semibold">顏色:</span>
-                            {colors.map(c => (
-                                <button 
-                                    key={c}
-                                    onClick={() => setColor(c)}
-                                    className={`tool-btn w-10 h-10 rounded-full ${color === c ? 'selected' : ''}`}
-                                    style={{ backgroundColor: c }}
-                                />
+                            {['#ff0000', '#0000ff', '#00ff00', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffffff'].map(c => (
+                                <button key={c} onClick={() => setColor(c)} className={`tool-btn w-10 h-10 rounded-full ${color === c ? 'selected' : ''}`} style={{ backgroundColor: c }} />
                             ))}
                         </div>
                         <div className="w-px h-10 bg-gray-500 mx-2"></div>
                         <div className="flex items-center gap-3">
                             <span className="text-white font-semibold">粗細:</span>
-                            {sizes.map(s => (
-                                <button 
-                                    key={s}
-                                    onClick={() => setBrushSize(s)}
-                                    className={`tool-btn bg-gray-600 w-10 h-10 rounded-full flex items-center justify-center ${brushSize === s ? 'selected' : ''}`}
-                                >
+                            { [5, 10, 20, 30, 50].map(s => (
+                                <button key={s} onClick={() => setBrushSize(s)} className={`tool-btn bg-gray-600 w-10 h-10 rounded-full flex items-center justify-center ${brushSize === s ? 'selected' : ''}`}>
                                     <div className="bg-white rounded-full" style={{width: s, height: s}}></div>
                                 </button>
                             ))}
                         </div>
                         <div className="w-px h-10 bg-gray-500 mx-2"></div>
-                        <button onClick={clearCanvas} className="bg-red-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-red-500 transition-colors">
-                            全部清除
-                        </button>
+                        <button onClick={clearCanvas} className="bg-red-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-red-500">清除</button>
                     </div>
 
-                    {/* --- 畫布區域 --- */}
+                    {/* 畫布區域 */}
                     <div id="canvas-container">
                         <canvas
                             id="drawing-canvas"
                             ref={canvasRef}
                             width={CANVAS_WIDTH}
                             height={CANVAS_HEIGHT}
-                            onMouseDown={startDrawing}
-                            onMouseMove={draw}
-                            onMouseUp={stopDrawing}
-                            onMouseLeave={stopDrawing}
-                            onTouchStart={startDrawing}
-                            onTouchMove={draw}
-                            onTouchEnd={stopDrawing}
+                            onMouseMove={drawOnMove}
+                            onMouseLeave={handleMouseLeave}
+                            onTouchMove={drawOnMove}
+                            onTouchEnd={handleMouseLeave}
                         />
                     </div>
-                    {/* --- 音效來源已改回 draw_sound.mp3 --- */}
                     <audio ref={audioRef} src="./draw_sound.mp3" className="hidden" />
                 </div>
             );
