@@ -102,6 +102,13 @@
                 ctx.beginPath();
                 ctx.moveTo(x, y);
                 isDrawingRef.current = true;
+                
+                // 嘗試在開始繪畫時就播放一次，以解鎖音訊
+                if(audioRef.current && audioRef.current.paused) {
+                    audioRef.current.play().catch(err => {
+                        console.log("音訊需要使用者互動才能播放。");
+                    });
+                }
             };
 
             const draw = (e) => {
@@ -110,6 +117,7 @@
                 const { x, y } = getCoords(e);
                 ctx.lineTo(x, y);
                 ctx.stroke();
+                
                 // 播放聲音
                 if(audioRef.current) {
                     audioRef.current.currentTime = 0;
@@ -182,8 +190,8 @@
                             onTouchEnd={stopDrawing}
                         />
                     </div>
-                    {/* --- 唯一的修改在這裡！ --- */}
-                    <audio ref={audioRef} src="./horse_sound.mp3" className="hidden" />
+                    {/* --- 音效來源已改回 draw_sound.mp3 --- */}
+                    <audio ref={audioRef} src="./draw_sound.mp3" className="hidden" />
                 </div>
             );
         };
